@@ -1,0 +1,228 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop, 'claude/**' ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ==================== Rust 테스트 ====================
+  rust-test:
+    name: Rust 블록체인 코어 테스트
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Rust 툴체인 설치
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+        components: rustfmt, clippy
+
+    - name: Rust 캐시
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          blockchain-core/target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: 코드 포맷 검사
+      working-directory: ./blockchain-core
+      run: cargo fmt -- --check
+
+    - name: Clippy 린트
+      working-directory: ./blockchain-core
+      run: cargo clippy -- -D warnings
+
+    - name: 빌드
+      working-directory: ./blockchain-core
+      run: cargo build --verbose
+
+    - name: 테스트
+      working-directory: ./blockchain-core
+      run: cargo test --verbose
+
+    - name: 릴리스 빌드
+      working-directory: ./blockchain-core
+      run: cargo build --release
+
+  # ==================== C 모듈 테스트 ====================
+  c-module-test:
+    name: C 성능 모듈 테스트
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: C 컴파일러 설치
+      run: sudo apt-get update && sudo apt-get install -y build-essential
+
+    - name: 빌드
+      working-directory: ./performance-module
+      run: make
+
+    - name: 테스트
+      working-directory: ./performance-module
+      run: make test
+      continue-on-error: true
+
+  # ==================== 스마트 컨트랙트 테스트 ====================
+  solidity-test:
+    name: 스마트 컨트랙트 테스트
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Node.js 설정
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: smart-contracts/package-lock.json
+
+    - name: 의존성 설치
+      working-directory: ./smart-contracts
+      run: npm ci
+
+    - name: 컴파일
+      working-directory: ./smart-contracts
+      run: npx hardhat compile
+
+    - name: 테스트
+      working-directory: ./smart-contracts
+      run: npx hardhat test
+      continue-on-error: true
+
+    - name: 가스 리포트
+      working-directory: ./smart-contracts
+      run: REPORT_GAS=true npx hardhat test
+      continue-on-error: true
+
+  # ==================== Docker 빌드 ====================
+  docker-build:
+    name: Docker 이미지 빌드
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Docker Buildx 설정
+      uses: docker/setup-buildx-action@v3
+
+    - name: Docker 캐시
+      uses: actions/cache@v3
+      with:
+        path: /tmp/.buildx-cache
+        key: ${{ runner.os }}-buildx-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-buildx-
+
+    - name: 블록체인 이미지 빌드
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/Dockerfile.blockchain
+        push: false
+        tags: konet-blockchain:test
+        cache-from: type=local,src=/tmp/.buildx-cache
+        cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+    - name: 캐시 이동
+      run: |
+        rm -rf /tmp/.buildx-cache
+        mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+  # ==================== 보안 검사 ====================
+  security-audit:
+    name: 보안 감사
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Rust 보안 감사
+      working-directory: ./blockchain-core
+      run: |
+        cargo install cargo-audit
+        cargo audit
+      continue-on-error: true
+
+    - name: npm 보안 감사
+      working-directory: ./smart-contracts
+      run: npm audit
+      continue-on-error: true
+
+  # ==================== 코드 커버리지 ====================
+  coverage:
+    name: 코드 커버리지
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Rust 툴체인
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+
+    - name: Tarpaulin 설치
+      run: cargo install cargo-tarpaulin
+
+    - name: 커버리지 생성
+      working-directory: ./blockchain-core
+      run: cargo tarpaulin --out Xml --output-dir ./coverage
+      continue-on-error: true
+
+    - name: Codecov 업로드
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./blockchain-core/coverage/cobertura.xml
+        flags: rust
+      continue-on-error: true
+
+  # ==================== 통합 테스트 ====================
+  integration-test:
+    name: 통합 테스트
+    runs-on: ubuntu-latest
+    needs: [rust-test, solidity-test]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Docker Compose 설정
+      run: docker-compose -f docker-compose.yml up -d
+      continue-on-error: true
+
+    - name: 헬스 체크 대기
+      run: |
+        sleep 30
+        curl -f http://localhost:8080/ || exit 1
+      continue-on-error: true
+
+    - name: API 테스트
+      run: |
+        curl -f http://localhost:8080/api/blocks
+        curl -f http://localhost:8080/api/stats
+      continue-on-error: true
+
+    - name: 로그 출력
+      if: failure()
+      run: docker-compose logs
+
+    - name: Docker Compose 중지
+      if: always()
+      run: docker-compose down
