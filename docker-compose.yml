@@ -1,0 +1,205 @@
+# KONET 블록체인 시스템 Docker Compose 설정
+#
+# 사용법:
+#   시작: docker-compose up -d
+#   중지: docker-compose down
+#   로그: docker-compose logs -f
+#   재빌드: docker-compose up -d --build
+
+version: '3.8'
+
+services:
+  # ==========================================
+  # 블록체인 노드
+  # ==========================================
+  blockchain-node:
+    container_name: konet-blockchain
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.blockchain
+    ports:
+      - "8080:8080"
+    environment:
+      - RUST_LOG=info
+      - RUST_BACKTRACE=1
+    networks:
+      - konet-network
+    restart: unless-stopped
+    volumes:
+      - blockchain-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ==========================================
+  # PostgreSQL 데이터베이스
+  # ==========================================
+  postgres:
+    container_name: konet-postgres
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=konet_db
+      - POSTGRES_USER=konet_user
+      - POSTGRES_PASSWORD=konet_password
+      # 초기화 스크립트 실행
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    networks:
+      - konet-network
+    restart: unless-stopped
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U konet_user -d konet_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # Redis (캐시 및 세션)
+  # ==========================================
+  redis:
+    container_name: konet-redis
+    image: redis:7.2-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass konet_redis_pass
+    networks:
+      - konet-network
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # 지갑 서비스 (Node.js)
+  # ==========================================
+  wallet-service:
+    container_name: konet-wallet
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.wallet
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=konet_db
+      - DB_USER=konet_user
+      - DB_PASS=konet_password
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASS=konet_redis_pass
+      - BLOCKCHAIN_RPC=http://blockchain-node:8080
+      - JWT_SECRET=change-this-in-production-!!!
+    networks:
+      - konet-network
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      blockchain-node:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================
+  # Nginx (리버스 프록시 & 로드 밸런서)
+  # ==========================================
+  nginx:
+    container_name: konet-nginx
+    image: nginx:1.25-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - konet-network
+    restart: unless-stopped
+    depends_on:
+      - blockchain-node
+      - wallet-service
+
+  # ==========================================
+  # Prometheus (모니터링)
+  # ==========================================
+  prometheus:
+    container_name: konet-prometheus
+    image: prom/prometheus:v2.50.1
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - konet-network
+    restart: unless-stopped
+
+  # ==========================================
+  # Grafana (대시보드)
+  # ==========================================
+  grafana:
+    container_name: konet-grafana
+    image: grafana/grafana:10.3.3
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./docker/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - konet-network
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+# ==========================================
+# 네트워크 설정
+# ==========================================
+networks:
+  konet-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ==========================================
+# 볼륨 설정 (데이터 영속성)
+# ==========================================
+volumes:
+  blockchain-data:
+    driver: local
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
