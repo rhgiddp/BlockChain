@@ -1,0 +1,146 @@
+{
+  "dashboard": {
+    "title": "KONET Blockchain Dashboard",
+    "tags": ["blockchain", "konet"],
+    "timezone": "Asia/Seoul",
+    "panels": [
+      {
+        "id": 1,
+        "title": "블록 생성 속도 (TPS)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(blockchain_blocks_total[1m])",
+            "legendFormat": "Blocks/sec"
+          }
+        ],
+        "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 }
+      },
+      {
+        "id": 2,
+        "title": "거래 처리량 (TPS)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(blockchain_transactions_total[1m])",
+            "legendFormat": "Transactions/sec"
+          }
+        ],
+        "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 }
+      },
+      {
+        "id": 3,
+        "title": "P2P 피어 수",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "blockchain_peers_connected",
+            "legendFormat": "Connected Peers"
+          }
+        ],
+        "gridPos": { "x": 0, "y": 8, "w": 6, "h": 4 }
+      },
+      {
+        "id": 4,
+        "title": "총 블록 수",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "blockchain_block_height",
+            "legendFormat": "Block Height"
+          }
+        ],
+        "gridPos": { "x": 6, "y": 8, "w": 6, "h": 4 }
+      },
+      {
+        "id": 5,
+        "title": "메모리 사용량",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "process_resident_memory_bytes / 1024 / 1024",
+            "legendFormat": "{{job}} - Memory (MB)"
+          }
+        ],
+        "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 }
+      },
+      {
+        "id": 6,
+        "title": "API 요청 레이턴시",
+        "type": "heatmap",
+        "targets": [
+          {
+            "expr": "rate(http_request_duration_seconds_bucket[5m])",
+            "legendFormat": "{{le}}"
+          }
+        ],
+        "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 }
+      },
+      {
+        "id": 7,
+        "title": "거래소 거래량",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "exchange_total_volume",
+            "legendFormat": "Total Volume"
+          }
+        ],
+        "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 }
+      },
+      {
+        "id": 8,
+        "title": "Bridge 처리량",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(bridge_transactions_total[5m])",
+            "legendFormat": "Bridge TPS"
+          }
+        ],
+        "gridPos": { "x": 0, "y": 24, "w": 12, "h": 8 }
+      },
+      {
+        "id": 9,
+        "title": "데이터베이스 연결",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "pg_stat_database_numbackends",
+            "legendFormat": "{{datname}}"
+          }
+        ],
+        "gridPos": { "x": 12, "y": 24, "w": 12, "h": 8 }
+      },
+      {
+        "id": 10,
+        "title": "CPU 사용률",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "100 - (avg by (instance) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+            "legendFormat": "{{instance}}"
+          }
+        ],
+        "gridPos": { "x": 0, "y": 32, "w": 12, "h": 8 }
+      },
+      {
+        "id": 11,
+        "title": "디스크 사용량",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "(node_filesystem_size_bytes - node_filesystem_avail_bytes) / node_filesystem_size_bytes * 100",
+            "legendFormat": "{{mountpoint}}"
+          }
+        ],
+        "gridPos": { "x": 12, "y": 32, "w": 12, "h": 8 }
+      }
+    ],
+    "refresh": "10s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    }
+  }
+}

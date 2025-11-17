@@ -1,0 +1,106 @@
+# Prometheus 설정
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'konet-blockchain'
+    environment: 'production'
+
+# Alertmanager 설정
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# 규칙 파일
+rule_files:
+  - 'alerts.yml'
+
+# Scrape 설정
+scrape_configs:
+  # Prometheus 자체 모니터링
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # 블록체인 노드
+  - job_name: 'blockchain-node'
+    static_configs:
+      - targets:
+          - 'blockchain-node-1:8080'
+          - 'blockchain-node-2:8080'
+          - 'blockchain-node-3:8080'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # 지갑 서비스
+  - job_name: 'wallet-service'
+    static_configs:
+      - targets:
+          - 'wallet-service:3000'
+    metrics_path: '/metrics'
+
+  # 거래소 서비스
+  - job_name: 'exchange-service'
+    static_configs:
+      - targets:
+          - 'exchange-service:3001'
+    metrics_path: '/metrics'
+
+  # Bridge 서비스
+  - job_name: 'bridge-service'
+    static_configs:
+      - targets:
+          - 'bridge-service:3002'
+    metrics_path: '/metrics'
+
+  # PostgreSQL Exporter
+  - job_name: 'postgres'
+    static_configs:
+      - targets:
+          - 'postgres-exporter:9187'
+
+  # Redis Exporter
+  - job_name: 'redis'
+    static_configs:
+      - targets:
+          - 'redis-exporter:9121'
+
+  # Node Exporter (시스템 메트릭)
+  - job_name: 'node'
+    static_configs:
+      - targets:
+          - 'node-exporter-1:9100'
+          - 'node-exporter-2:9100'
+          - 'node-exporter-3:9100'
+
+  # Kubernetes 모니터링
+  - job_name: 'kubernetes-apiservers'
+    kubernetes_sd_configs:
+      - role: endpoints
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: default;kubernetes;https
+
+  - job_name: 'kubernetes-pods'
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
