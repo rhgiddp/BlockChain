@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # 관리자 서비스 백엔드
+  admin-service:
+    build:
+      context: ./admin-service
+      dockerfile: Dockerfile
+    container_name: konet-admin-service
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=production
+      - ADMIN_PORT=3004
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=konet_wallet
+      - DB_USER=postgres
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - JWT_SECRET=${JWT_SECRET:-konet-secret}
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - konet-network
+    restart: unless-stopped
+
+  # 관리자 프론트엔드
+  admin-frontend:
+    build:
+      context: ./admin-frontend
+      dockerfile: Dockerfile
+    container_name: konet-admin-frontend
+    ports:
+      - "3005:80"
+    environment:
+      - REACT_APP_ADMIN_API_BASE_URL=http://localhost:3004/api/admin
+    depends_on:
+      - admin-service
+    networks:
+      - konet-network
+    restart: unless-stopped
+
+  # PostgreSQL (기존 사용)
+  postgres:
+    image: postgres:15
+    container_name: konet-postgres
+    environment:
+      - POSTGRES_DB=konet_wallet
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./scripts/init-admin-db.sql:/docker-entrypoint-initdb.d/02-admin.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - konet-network
+    restart: unless-stopped
+
+  # Redis (기존 사용)
+  redis:
+    image: redis:7-alpine
+    container_name: konet-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - konet-network
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  konet-network:
+    driver: bridge
