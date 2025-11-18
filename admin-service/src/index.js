@@ -2,6 +2,7 @@
  * KONET 블록체인 관리자 서비스
  */
 
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');

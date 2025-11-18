@@ -3,9 +3,9 @@
  */
 
 const express = require('express');
-const db = require('../../../wallet-service/backend/src/database/db');
-const redis = require('../../../wallet-service/backend/src/database/redis');
-const logger = require('../../../wallet-service/backend/src/utils/logger');
+const db = require('../database/db');
+const redis = require('../database/redis');
+const logger = require('../utils/logger');
 const { requireAdmin, logActivity } = require('../middleware/adminAuth');
 
 const router = express.Router();

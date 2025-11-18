@@ -3,8 +3,8 @@
  */
 
 const express = require('express');
-const db = require('../../../wallet-service/backend/src/database/db');
-const logger = require('../../../wallet-service/backend/src/utils/logger');
+const db = require('../database/db');
+const logger = require('../utils/logger');
 const { requireAdmin, requireRole, logActivity } = require('../middleware/adminAuth');
 
 const router = express.Router();

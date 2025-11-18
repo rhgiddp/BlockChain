@@ -3,8 +3,8 @@
  */
 
 const jwt = require('jsonwebtoken');
-const db = require('../../wallet-service/backend/src/database/db');
-const logger = require('../../wallet-service/backend/src/utils/logger');
+const db = require('../database/db');
+const logger = require('../utils/logger');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'konet-secret-key-change-in-production';
 
